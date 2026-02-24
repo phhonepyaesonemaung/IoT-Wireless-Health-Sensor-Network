@@ -15,7 +15,7 @@ A real-time wireless health monitoring system using Arduino sensor nodes with MA
 - Arduino UNO
 - MAX30102 Pulse Oximeter & Heart Rate Sensor
 - nRF24L01 Wireless Transceiver Module
-- **10µF capacitor** (across nRF24L01 VCC-GND for stable power)
+- **10µF capacitor** (across nRF24L01 VCC-GND for stable power) => not essential 
 - Jumper wires
 
 ### Gateway
