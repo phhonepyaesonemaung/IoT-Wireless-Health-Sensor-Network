@@ -5,91 +5,105 @@
 #include <nRF24L01.h>
 #include <RF24.h>
 
-const char* ssid = "YOUR_WIFI_SSID";      // ← your WiFi
-const char* password = "YOUR_WIFI_PASS";
+// WiFi
+const char* ssid = "YOUR_WIFI_SSID";
+const char* password = "YOUR_WIFI_PASSWORD";
 
+// ThingSpeak
 WiFiClient client;
-unsigned long channelID = 2659427;        // ← your ThingSpeak channel
-const char* writeAPIKey = "CSMG85BA8377Z1MW";  // ← your API key
+unsigned long channelID = 2659427;
+const char* writeAPIKey = "YOUR_API_KEY";
 
+// nRF24
 #define CE_PIN D2
 #define CSN_PIN D8
 RF24 radio(CE_PIN, CSN_PIN);
 const byte address[6] = "00001";
 
+// SAME struct as sender
 struct SensorPacket {
   byte nodeID;
-  int heartRate;
-  int spo2;
+  int ecgValue;
   unsigned long timestamp;
 };
 
+// Store values from 3 nodes
+int ecg1 = 0;
+int ecg2 = 0;
+int ecg3 = 0;
+
 unsigned long lastUpdate = 0;
-const unsigned long updateDelay = 20000;  // 20s between uploads
+const unsigned long updateDelay = 20000; // 20 sec
 
 void setup() {
   Serial.begin(115200);
-  Serial.println("ECG/O2 Gateway Starting...");
+  Serial.println("ESP8266 Gateway Starting...");
 
-  // nRF24
+  // nRF24 setup
   if (!radio.begin()) {
     Serial.println("nRF24 failed");
     while (1);
   }
+
   radio.setDataRate(RF24_250KBPS);
   radio.setPALevel(RF24_PA_LOW);
   radio.setChannel(108);
   radio.openReadingPipe(0, address);
   radio.startListening();
 
-  // WiFi + ThingSpeak
+  // WiFi connect
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
+
   Serial.println("\nWiFi connected!");
   ThingSpeak.begin(client);
-
-  Serial.println("Gateway Ready - Fields: 1=Node1HR,2=Node1SpO2,3=Node2HR,4=Node2SpO2");
 }
 
 void loop() {
+  // Reconnect WiFi if needed
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi lost - reconnecting...");
     WiFi.begin(ssid, password);
     delay(5000);
     return;
   }
 
+  // Receive data
   if (radio.available()) {
     SensorPacket pkt;
     radio.read(&pkt, sizeof(pkt));
 
     Serial.print("Node ");
     Serial.print(pkt.nodeID);
-    Serial.print(" HR:");
-    Serial.print(pkt.heartRate);
-    Serial.print(" BPM, SpO2:");
-    Serial.print(pkt.spo2);
-    Serial.println("%");
+    Serial.print(" ECG: ");
+    Serial.println(pkt.ecgValue);
 
-    // Buffer data and upload periodically
-    unsigned long now = millis();
-    if (now - lastUpdate > updateDelay) {
-      if (pkt.nodeID == 1) {
-        ThingSpeak.setField(1, pkt.heartRate);
-        ThingSpeak.setField(2, pkt.spo2);
-        ThingSpeak.writeFields(channelID, writeAPIKey);
-        Serial.println("Node1 data uploaded");
-      } else if (pkt.nodeID == 2) {
-        ThingSpeak.setField(3, pkt.heartRate);
-        ThingSpeak.setField(4, pkt.spo2);
-        ThingSpeak.writeFields(channelID, writeAPIKey);
-        Serial.println("Node2 data uploaded");
-      }
-      lastUpdate = now;
-    }
+    if (pkt.nodeID == 1) ecg1 = pkt.ecgValue;
+    else if (pkt.nodeID == 2) ecg2 = pkt.ecgValue;
+    else if (pkt.nodeID == 3) ecg3 = pkt.ecgValue;
   }
+
+  // Upload every 20 seconds
+  unsigned long now = millis();
+  if (now - lastUpdate > updateDelay) {
+
+    ThingSpeak.setField(1, ecg1);
+    ThingSpeak.setField(2, ecg2);
+    ThingSpeak.setField(3, ecg3);
+
+    int response = ThingSpeak.writeFields(channelID, writeAPIKey);
+
+    if (response == 200) {
+      Serial.println("Upload success");
+    } else {
+      Serial.print("Upload failed: ");
+      Serial.println(response);
+    }
+
+    lastUpdate = now;
+  }
+
   delay(100);
 }
